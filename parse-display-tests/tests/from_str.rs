@@ -1114,6 +1114,38 @@ fn regex_capture_prefix_escape() {
     assert_from_str_err::<TestStruct>("aa");
 }
 
+#[test]
+fn from_str_struct_field_delimited() {
+    #[derive(FromStr, Debug, Eq, PartialEq)]
+    #[display("TestStruct-{a}")]
+    struct TestStruct {
+        #[display(delimited=",")]
+        a: Vec<u32>
+    }
+    assert_from_str("TestStruct-1,2,3", TestStruct {a: vec![1,2,3]});
+}
+
+#[test]
+fn from_str_enum_field_delimited() {
+    #[derive(FromStr, Debug, Eq, PartialEq)]
+    
+    enum TestEnum {
+        #[display("TestEnum::A-{field}")]
+        A { 
+            #[display(delimited=",")]
+            field: Vec<u32>
+        },
+        #[display("TestEnum::B-{0}")]
+        B (
+            #[display(delimited=",")] Vec<u32>
+        ),
+    }
+    assert_from_str("TestEnum::A-1,2,3", TestEnum::A {field: vec![1,2,3]});
+    assert_from_str("TestEnum::B-1,2,3", TestEnum::B(vec![1,2,3]));
+}
+
+
+
 fn assert_from_str<T: FromStr + Debug + PartialEq>(s: &str, value: T)
 where
     <T as FromStr>::Err: Display,

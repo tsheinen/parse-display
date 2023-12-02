@@ -68,7 +68,7 @@ fn derive_display_for_struct(input: &DeriveInput, data: &DataStruct) -> Result<T
         &trait_path,
         &wheres,
         quote! {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {    
                 ::core::write!(f, #args)
             }
         },
@@ -639,11 +639,20 @@ impl<'a> FieldEntry<'a> {
         key: &FieldKey,
     ) -> Option<TokenStream> {
         if let Some(capture_index) = self.capture_index(names) {
-            Some(build_parse_capture_expr(
-                crate_path,
-                &key.to_string(),
-                capture_index,
-            ))
+            if let Some(delimited) = &self.hattrs.delimited {
+                Some(build_parse_capture_expr_delimited(
+                    crate_path,
+                    &key.to_string(),
+                    capture_index,
+                    delimited
+                ))
+            } else {
+                Some(build_parse_capture_expr(
+                    crate_path,
+                    &key.to_string(),
+                    capture_index,
+                ))
+            }
         } else if self.use_default {
             Some(quote! { ::core::default::Default::default() })
         } else {
@@ -721,6 +730,7 @@ struct DisplayArgs {
     #[struct_meta(name = "crate")]
     crate_path: Option<Path>,
     dump: bool,
+    delimited: Option<LitStr>,
 }
 
 #[derive(Clone, ToTokens)]
@@ -761,6 +771,7 @@ struct HelperAttributes {
     dump_display: bool,
     dump_from_str: bool,
     crate_path: Path,
+    delimited: Option<LitStr>
 }
 impl HelperAttributes {
     fn from(attrs: &[Attribute]) -> Result<Self> {
@@ -777,6 +788,7 @@ impl HelperAttributes {
             dump_display: false,
             dump_from_str: false,
             crate_path: parse_quote!(::parse_display),
+            delimited: None,
         };
         for a in attrs {
             if a.path().is_ident("display") {
@@ -795,6 +807,7 @@ impl HelperAttributes {
         if let Some(style) = &args.style {
             self.style = Some(DisplayStyle::parse_lit_str(style)?);
         }
+        self.delimited = args.delimited;
         if let Some(bounds) = args.bound {
             let list = self.bound_display.get_or_insert(Vec::new());
             for bound in bounds {
@@ -1181,7 +1194,13 @@ impl<'a> DisplayContext<'a> {
                 bounds.pred.push(parse_quote!(#ty : ::core::fmt::#tr));
             }
         }
-        Ok(self.field_expr(key))
+        let hattrs: HelperAttributes = HelperAttributes::from(&field.attrs)?;
+        let field_expr = self.field_expr(key);
+        if let Some(delimiter) = hattrs.delimited {
+            Ok(quote! { #field_expr .iter().map(|f| f.to_string()) .collect::<Vec<_>>().join(#delimiter)})
+        } else {
+            Ok(field_expr)
+        }
     }
 
     fn field_expr(&self, key: &FieldKey) -> TokenStream {
@@ -1524,5 +1543,22 @@ fn build_parse_capture_expr(
             .map_or("", |m| m.as_str())
             .parse()
             .map_err(|e| #crate_path::ParseError::with_message(#msg))?
+    }
+}
+
+fn build_parse_capture_expr_delimited(
+    crate_path: &Path,
+    field_name: &str,
+    capture_index: usize,
+    delimited: &LitStr
+) -> TokenStream {
+    let msg = format!("field `{field_name}` parse failed.");
+    quote! {
+        
+        c.get(#capture_index)
+            .map_or("", |m| m.as_str())
+            .split(#delimited)
+            .map(|inner| inner.parse().map_err(|e| #crate_path::ParseError::with_message(#msg)))
+            .collect::<Result<_,_>>()?
     }
 }
