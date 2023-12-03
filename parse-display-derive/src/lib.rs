@@ -68,7 +68,35 @@ fn derive_display_for_struct(input: &DeriveInput, data: &DataStruct) -> Result<T
         &trait_path,
         &wheres,
         quote! {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {    
+            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                struct DisplayDelimited<Iter> {
+                    delimiter: &'static str,
+                    items: Iter,
+                }
+                
+                impl<'a, Iter, Item: 'a> ::core::fmt::Display for DisplayDelimited<Iter>
+                where
+                    Iter: ::core::iter::IntoIterator<Item = &'a Item> + Clone,
+                    Item: ::core::fmt::Display,
+                {
+                    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                        
+                        let mut iter = self.items.clone().into_iter();
+                        let mut next = iter.next();
+                        loop {
+                            if let Some(inner) = next {
+                                write!(f,"{}", inner)?;
+                            }
+                            next = iter.next();
+                            if next.is_none() {
+                                break;
+                            } else {
+                                write!(f,"{}", self.delimiter)?;
+                            }
+                        }
+                        Ok(())
+                    }
+                }
                 ::core::write!(f, #args)
             }
         },
@@ -137,6 +165,35 @@ fn derive_display_for_enum(input: &DeriveInput, data: &DataEnum) -> Result<Token
     let trait_path = parse_quote!(::core::fmt::Display);
     let contents = quote! {
         fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+            struct DisplayDelimited<Iter> {
+                delimiter: &'static str,
+                items: Iter,
+            }
+            
+            impl<'a, Iter, Item: 'a> ::core::fmt::Display for DisplayDelimited<Iter>
+            where
+                Iter: ::core::iter::IntoIterator<Item = &'a Item> + Clone,
+                Item: ::core::fmt::Display,
+            {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                    
+                    let mut iter = self.items.clone().into_iter();
+                    let mut next = iter.next();
+                    loop {
+                        if let Some(inner) = next {
+                            write!(f,"{}", inner)?;
+                        }
+                        next = iter.next();
+                        if next.is_none() {
+                            break;
+                        } else {
+                            write!(f,"{}", self.delimiter)?;
+                        }
+                    }
+                    Ok(())
+                }
+            }
+            
             match self {
                 #(#arms)*
             }
@@ -1197,7 +1254,7 @@ impl<'a> DisplayContext<'a> {
         let hattrs: HelperAttributes = HelperAttributes::from(&field.attrs)?;
         let field_expr = self.field_expr(key);
         if let Some(delimiter) = hattrs.delimited {
-            Ok(quote! { #field_expr .iter().map(|f| f.to_string()) .collect::<Vec<_>>().join(#delimiter)})
+            Ok(quote! { DisplayDelimited { delimiter: #delimiter, items: #field_expr } })
         } else {
             Ok(field_expr)
         }
@@ -1205,7 +1262,7 @@ impl<'a> DisplayContext<'a> {
 
     fn field_expr(&self, key: &FieldKey) -> TokenStream {
         match self {
-            DisplayContext::Struct { .. } => quote! { self.#key },
+            DisplayContext::Struct { .. } => quote! { &self.#key },
             DisplayContext::Variant { .. } => {
                 let var = key.binding_var();
                 quote! { #var }

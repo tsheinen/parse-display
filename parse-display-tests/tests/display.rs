@@ -658,6 +658,38 @@ fn display_enum_field_format_deep_noncopy() {
 }
 
 #[test]
+fn display_struct_field_delimited() {
+    #[derive(Display, Debug, Eq, PartialEq)]
+    #[display("TestStruct-{a}")]
+    struct TestStruct {
+        #[display(delimited=",")]
+        a: [u32;3]
+    }
+    assert_display(TestStruct {a: [1,2,3]}, "TestStruct-1,2,3");
+}
+
+#[test]
+fn display_enum_field_delimited() {
+    #[derive(Display, Debug, Eq, PartialEq)]
+    
+    enum TestEnum {
+        #[display("TestEnum::A-{field}")]
+        A { 
+            #[display(delimited=",")]
+            field: [u32;3]
+        },
+        #[display("TestEnum::B-{0}")]
+        B (
+            #[display(delimited=",")] [u32;3]
+        ),
+    }
+    assert_display(TestEnum::A {field: [1,2,3]}, "TestEnum::A-1,2,3", );
+    assert_display(TestEnum::B([1,2,3]), "TestEnum::B-1,2,3" );
+}
+
+
+
+#[test]
 fn auto_bound_newtype() {
     #[derive(Display)]
     struct TestNewType<T>(T);
